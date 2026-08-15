@@ -1,0 +1,6 @@
+google-genai
+yt-dlp
+moviepy
+python-dotenv
+pydantic
+requests
