@@ -7,6 +7,9 @@ import os
 import re
 from typing import Any, Dict, List
 from urllib.parse import quote_plus
+from urllib.parse import urlparse
+
+from bs4 import BeautifulSoup
 
 from core.config import USER_AGENT
 
@@ -33,11 +36,35 @@ class MarketplaceScraper:
             raise ValueError(f"Platform chưa được hỗ trợ: {platform}")
         if not keyword.strip():
             raise ValueError("Từ khóa tìm kiếm không được để trống.")
+        url = self.TARGETS[platform].format(keyword=quote_plus(keyword.strip()))
+        html = self._fetch_html(url, platform)
+        products = self._extract_json_ld(html, platform)
+        if not products:
+            raise ResearchUnavailable(f"{platform} không trả dữ liệu sản phẩm công khai có thể đọc được. Hãy dùng file export hợp lệ từ affiliate portal hoặc nhập URL sản phẩm.")
+        return products[:limit]
+
+    def inspect_product_url(self, product_url: str, platform: str) -> Dict[str, Any]:
+        """Inspect one public product URL so generated content remains tied to that item."""
+        parsed = urlparse(product_url.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Link sản phẩm phải bắt đầu bằng http:// hoặc https://.")
+        html = self._fetch_html(product_url.strip(), platform)
+        products = self._extract_json_ld(html, platform)
+        if products:
+            product = products[0]
+            product["product_url"] = product.get("product_url") or product_url.strip()
+            product["source"] = "direct_product_url"
+            return product
+        fallback = self._extract_open_graph(html, product_url.strip(), platform)
+        if fallback:
+            return fallback
+        raise ResearchUnavailable("Không đọc được tên sản phẩm từ link này. Hãy thử link sản phẩm công khai đầy đủ hoặc import CSV affiliate.")
+
+    def _fetch_html(self, url: str, platform: str) -> str:
         try:
             from playwright.sync_api import sync_playwright
         except ImportError as error:
             raise ResearchUnavailable("Chưa cài Playwright. Chạy `python -m playwright install chromium` sau khi cài requirements.") from error
-        url = self.TARGETS[platform].format(keyword=quote_plus(keyword.strip()))
         try:
             with sync_playwright() as playwright:
                 installed_chrome = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -52,10 +79,7 @@ class MarketplaceScraper:
                 browser.close()
         except Exception as error:
             raise ResearchUnavailable(f"Không thể đọc trang công khai của {platform}: {error}") from error
-        products = self._extract_json_ld(html, platform)
-        if not products:
-            raise ResearchUnavailable(f"{platform} không trả dữ liệu sản phẩm công khai có thể đọc được. Hãy dùng file export hợp lệ từ affiliate portal hoặc nhập URL sản phẩm.")
-        return products[:limit]
+        return html
 
     def _extract_json_ld(self, html: str, platform: str) -> List[Dict[str, Any]]:
         found: List[Dict[str, Any]] = []
@@ -83,6 +107,32 @@ class MarketplaceScraper:
                               "image_url": self._image(node.get("image")), "description": str(node.get("description") or ""),
                               "platform": platform, "source": "public_json_ld"})
         return found
+
+    def _extract_open_graph(self, html: str, product_url: str, platform: str) -> Dict[str, Any]:
+        """Fallback for public product pages that do not publish JSON-LD."""
+        soup = BeautifulSoup(html, "html.parser")
+        def meta(name: str) -> str:
+            element = soup.find("meta", property=name) or soup.find("meta", attrs={"name": name})
+            return str(element.get("content", "")).strip() if element else ""
+
+        title = meta("og:title") or (soup.title.get_text(strip=True) if soup.title else "")
+        if not title:
+            return {}
+        return {
+            "product_id": product_url,
+            "title": title,
+            "price": 0,
+            "rating": 0,
+            "review_count": 0,
+            "sales_count": 0,
+            "commission_rate": 0,
+            "is_official_shop": False,
+            "product_url": product_url,
+            "image_url": meta("og:image"),
+            "description": meta("og:description") or meta("description"),
+            "platform": platform,
+            "source": "direct_product_url",
+        }
 
     @staticmethod
     def _number(value: Any) -> float:

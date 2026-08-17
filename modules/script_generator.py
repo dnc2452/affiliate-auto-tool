@@ -652,8 +652,13 @@ class MultiModelScriptGenerator:
     def generate_script(
         self,
         product_info: Dict,
-        sample_image_path: Optional[str] = None
+        sample_image_path: Optional[str] = None,
+        language: str = "vi",
     ) -> Optional[VideoScript]:
+
+        if language not in {"vi", "en"}:
+            raise ValueError("Ngôn ngữ content phải là 'vi' hoặc 'en'.")
+        language_instruction = "Tiếng Việt tự nhiên, đúng chính tả." if language == "vi" else "Natural, fluent English."
 
         raw_price = product_info.get("price", 0)
 
@@ -715,6 +720,8 @@ với thông tin sản phẩm sau:
 - Giá bán: {formatted_price}
 
 YÊU CẦU ĐẦU RA:
+
+Toàn bộ voiceover, caption và seeding_comments phải viết bằng: {language_instruction}
 
 Chỉ được trả về MỘT CHUỖI JSON HỢP LỆ.
 

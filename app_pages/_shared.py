@@ -20,6 +20,8 @@ def initialize_state() -> None:
     st.session_state.setdefault("latest_content", None)
     st.session_state.setdefault("latest_media", None)
     st.session_state.setdefault("research_results", [])
+    st.session_state.setdefault("content_language", "vi")
+    st.session_state.setdefault("latest_package", None)
 
 
 def products_frame(products: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -44,3 +46,7 @@ def save_upload(upload: Any, destination: Path, prefix: str) -> str:
 
 def parse_comments(value: str) -> List[str]:
     return [line.strip("- ").strip() for line in value.splitlines() if line.strip("- ").strip()]
+
+
+def content_language_label(language: str) -> str:
+    return "Tiếng Việt" if language == "vi" else "English"

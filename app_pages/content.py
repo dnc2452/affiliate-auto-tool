@@ -1,12 +1,13 @@
 import streamlit as st
 
 from agents.content_agent import ContentAgent
-from app_pages._shared import database, initialize_state, parse_comments, product_label, save_upload
+from app_pages._shared import content_language_label, database, initialize_state, parse_comments, product_label, save_upload
 
 initialize_state()
 db = database()
 st.title("Content studio")
-st.caption("Create an original, platform-native script from a verified product. Review all claims before publishing.")
+language = st.session_state["content_language"]
+st.caption(f"Create an original, platform-native script in {content_language_label(language)}. Review all claims before publishing.")
 products = db.get_products(limit=100)
 selected = st.session_state.get("selected_product")
 if products:
@@ -20,7 +21,7 @@ if products:
             from pathlib import Path
             image_path = save_upload(image, Path("data") / "uploads", "content")
         with st.status("Generating content…", expanded=True) as status:
-            content = ContentAgent().run(selected, image_path=image_path)
+            content = ContentAgent().run(selected, image_path=image_path, language=language)
             status.update(label="Content generated" if content else "Generation failed", state="complete")
         if content:
             st.session_state["latest_content"] = content

@@ -24,6 +24,13 @@ class FakeScraper:
             "product_url": "https://example.com/p/1", "image_url": "https://example.com/p.jpg",
         }]
 
+    def inspect_product_url(self, product_url, platform):
+        return {
+            "product_id": product_url, "title": "Đèn từ link trực tiếp", "price": 159000,
+            "sales_count": 2400, "rating": 4.8, "review_count": 850,
+            "commission_rate": 0, "product_url": product_url, "source": "direct_product_url",
+        }
+
 
 class ResearchAndScoringTests(unittest.TestCase):
     def test_missing_commission_reduces_confidence_without_inventing_data(self):
@@ -42,6 +49,14 @@ class ResearchAndScoringTests(unittest.TestCase):
             self.assertEqual(products[0]["source"], "playwright_public")
             self.assertGreater(products[0]["winner_score"], 60)
             self.assertEqual(len(agent.db.get_products()), 1)
+
+    def test_direct_product_url_is_preserved_for_the_content_workflow(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            agent = ResearchAgent(scraper=FakeScraper())
+            agent.db = Database(Path(temporary_directory) / "affiliate.db")
+            products = agent.run(product_url="https://example.com/p/exact", platform="shopee", min_score=0)
+            self.assertEqual(products[0]["product_url"], "https://example.com/p/exact")
+            self.assertEqual(products[0]["source"], "direct_product_url")
 
     def test_upsert_returns_stable_database_id(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -70,9 +85,11 @@ class ResearchAndScoringTests(unittest.TestCase):
             )
             agent.log_info = Mock()
             agent.log_error = Mock()
-            result = agent.run({"id": product_id, "title": "Đèn", "price": 1})
+            result = agent.run({"id": product_id, "title": "Đèn", "price": 1}, language="en")
             self.assertIsInstance(result["content_id"], int)
             self.assertEqual(result["hook"], "Bật sáng ngay")
+            self.assertEqual(result["language"], "en")
+            self.assertEqual(agent.generator.generate_script.call_args.kwargs["language"], "en")
 
     def test_package_contains_reviewed_copy_media_and_thumbnail(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

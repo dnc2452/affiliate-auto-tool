@@ -19,13 +19,21 @@ class ResearchAgent(BaseAgent):
     def run(self, keyword: str = "", products: Optional[List[Dict[str, Any]]] = None,
             platform: str = "shopee", limit: int = DEFAULT_SEARCH_LIMIT,
             min_score: float = MIN_WINNER_SCORE, save_to_db: bool = True,
-            use_demo: bool = False) -> List[Dict[str, Any]]:
+            use_demo: bool = False, product_url: str = "") -> List[Dict[str, Any]]:
         """Research products. Demo data is available only when explicitly requested."""
         if platform not in {"shopee", "tiktok", "lazada"}:
             raise ValueError("Platform phải là shopee, tiktok hoặc lazada.")
         source = "provided"
         if products:
             raw_products = products
+        elif product_url.strip():
+            source = "direct_product_url"
+            try:
+                raw_products = [self.scraper.inspect_product_url(product_url, platform)]
+            except ResearchUnavailable as error:
+                self.db.record_research_run(product_url, platform, source, 1, error_message=str(error))
+                self.log_warning(str(error))
+                return []
         elif use_demo:
             source = "demo"
             raw_products = self._get_demo_products(keyword or "sản phẩm affiliate")

@@ -25,7 +25,8 @@ class ContentAgent(BaseAgent):
         self,
         product: Dict[str, Any],
         image_path: Optional[str] = None,
-        save_to_db: bool = True
+        save_to_db: bool = True,
+        language: str = "vi",
     ) -> Optional[Dict[str, Any]]:
         """
         Tạo nội dung cho 1 sản phẩm.
@@ -55,7 +56,8 @@ class ContentAgent(BaseAgent):
         try:
             script: Optional[VideoScript] = self.generator.generate_script(
                 product_info=product_info,
-                sample_image_path=image_path
+                sample_image_path=image_path,
+                language=language,
             )
         except Exception as e:
             self.log_error(f"Lỗi khi gọi MultiModelScriptGenerator: {e}")
@@ -71,7 +73,8 @@ class ContentAgent(BaseAgent):
             "caption": script.caption,
             "seeding_comments": script.seeding_comments,
             "used_model": script.used_model,
-            "hook": self._hook_from_voiceover(script.voiceover),
+            "language": language,
+            "hook": self._hook_from_voiceover(script.voiceover, language),
             "hashtags": self._hashtags_for(product),
             "product": product,          # giữ lại thông tin sản phẩm gốc
         }
@@ -99,10 +102,10 @@ class ContentAgent(BaseAgent):
         return result
 
     @staticmethod
-    def _hook_from_voiceover(voiceover: str) -> str:
+    def _hook_from_voiceover(voiceover: str, language: str = "vi") -> str:
         """Use the first sentence as a portable, editable hook."""
         first = (voiceover or "").strip().split(".", 1)[0].strip()
-        return first or "Khám phá sản phẩm này trước khi quyết định mua."
+        return first or ("Discover this product before you buy." if language == "en" else "Khám phá sản phẩm này trước khi quyết định mua.")
 
     @staticmethod
     def _hashtags_for(product: Dict[str, Any]) -> str:
