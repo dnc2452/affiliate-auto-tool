@@ -1,6 +1,28 @@
+# AI Models
 google-genai
-yt-dlp
-moviepy
-python-dotenv
-pydantic
+openai
+groq
 requests
+
+# Video & Audio
+moviepy
+gTTS
+Pillow
+imageio
+imageio-ffmpeg
+
+# Browser Automation (Free)
+playwright
+
+# Data & Validation
+pydantic
+python-dotenv
+
+# UI
+streamlit
+
+# Utils
+yt-dlp
+aiohttp
+beautifulsoup4
+lxml
