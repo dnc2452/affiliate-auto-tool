@@ -29,7 +29,8 @@ class AffiliatePipeline:
         platform: str = "shopee",
         image_paths: Optional[List[str]] = None,
         limit: int = 3,
-        min_score: float = 60
+        min_score: float = 60,
+        use_demo: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Chạy toàn bộ quy trình.
@@ -48,7 +49,8 @@ class AffiliatePipeline:
             products=products,
             platform=platform,
             limit=limit,
-            min_score=min_score
+            min_score=min_score,
+            use_demo=use_demo,
         )
 
         if not winners:
@@ -99,7 +101,8 @@ if __name__ == "__main__":
     # Cách 1: Dùng dữ liệu demo (không cần ảnh)
     results = pipeline.run(
         keyword="dầu gội phủ bạc",
-        limit=2
+        limit=2,
+        use_demo=True,
     )
 
     # Cách 2: Nếu muốn test với ảnh thật, bỏ comment đoạn dưới

@@ -71,16 +71,19 @@ class ContentAgent(BaseAgent):
             "caption": script.caption,
             "seeding_comments": script.seeding_comments,
             "used_model": script.used_model,
+            "hook": self._hook_from_voiceover(script.voiceover),
+            "hashtags": self._hashtags_for(product),
             "product": product,          # giữ lại thông tin sản phẩm gốc
         }
 
         self.log_info(f"Tạo nội dung thành công bằng model: {script.used_model}")
 
         # Lưu vào database nếu có db_id
-        if save_to_db and product.get("db_id"):
+        product_db_id = product.get("db_id") or product.get("id")
+        if save_to_db and product_db_id:
             try:
                 content_id = self.db.save_content(
-                    product_db_id=product["db_id"],
+                    product_db_id=int(product_db_id),
                     content={
                         "voiceover": script.voiceover,
                         "caption": script.caption,
@@ -94,6 +97,19 @@ class ContentAgent(BaseAgent):
                 self.log_error(f"Lỗi lưu content vào database: {e}")
 
         return result
+
+    @staticmethod
+    def _hook_from_voiceover(voiceover: str) -> str:
+        """Use the first sentence as a portable, editable hook."""
+        first = (voiceover or "").strip().split(".", 1)[0].strip()
+        return first or "Khám phá sản phẩm này trước khi quyết định mua."
+
+    @staticmethod
+    def _hashtags_for(product: Dict[str, Any]) -> str:
+        title = str(product.get("title", "affiliate"))
+        words = ["".join(char for char in word if char.isalnum()) for word in title.split()]
+        terms = [f"#{word}" for word in words[:3] if len(word) > 2]
+        return " ".join(["#affiliate", "#review", *terms])
 
     def run_batch(
         self,

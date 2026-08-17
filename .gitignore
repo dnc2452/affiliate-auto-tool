@@ -2,7 +2,12 @@ venv/
 __pycache__/
 *.pyc
 .env
+.streamlit/secrets.toml
 output/
+data/uploads/
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 temp/
 Downloads/
 *.sql

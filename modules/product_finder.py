@@ -1,100 +1,93 @@
-import logging
-from typing import Dict, List, Optional
+"""Explainable, data-quality-aware winner scoring for affiliate products."""
+
+from __future__ import annotations
+
+import math
+from typing import Any, Dict, List, Tuple
+
 from pydantic import BaseModel, Field
 
-# Thiết lập hệ thống ghi log
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class ProductMetrics(BaseModel):
-    """Khuôn mẫu dữ liệu sản phẩm chuẩn hóa (dùng Pydantic để validate)"""
+    """Canonical product record shared by research, content and analytics."""
+
     product_id: str
     title: str
-    price: float = Field(gt=0, description="Giá sản phẩm phải lớn hơn 0")
-    sales_count_30d: int = Field(ge=0, description="Lượt bán trong 30 ngày")
-    rating: float = Field(ge=0, le=5, description="Điểm đánh giá từ 0 đến 5 sao")
-    commission_rate: float = Field(ge=0, le=100, description="Tỷ lệ hoa hồng (%)")
+    price: float = Field(ge=0)
+    sales_count_30d: int = Field(default=0, ge=0)
+    rating: float = Field(default=0, ge=0, le=5)
+    review_count: int = Field(default=0, ge=0)
+    commission_rate: float = Field(default=0, ge=0, le=100)
     is_official_shop: bool = False
-    product_url: str
+    product_url: str = ""
+    affiliate_url: str = ""
+    shop_name: str = ""
+    image_url: str = ""
+    description: str = ""
+
 
 class ProductAnalyzer:
-    """Module phân tích & sàng lọc sản phẩm Winner cho Affiliate"""
-    
-    def __init__(self, min_rating: float = 4.5, min_sales: int = 50):
+    """Ranks products without pretending unavailable marketplace data is known."""
+
+    def __init__(self, min_rating: float = 4.3, min_sales: int = 20):
         self.min_rating = min_rating
         self.min_sales = min_sales
 
-    def calculate_winner_score(self, product: ProductMetrics) -> float:
-        """Thuật toán tính Điểm Sản Phẩm Winner (Thang điểm 100)"""
-        # 1. Điểm đánh giá (Tối đa 30 điểm)
-        rating_score = (product.rating / 5.0) * 30
-        
-        # 2. Điểm lượt bán (Tối đa 30 điểm - Giới hạn mốc 1000 đơn)
-        sales_score = min(product.sales_count_30d / 1000.0, 1.0) * 30
-        
-        # 3. Điểm hoa hồng (Tối đa 30 điểm - Giới hạn mốc 20% hoa hồng)
-        commission_score = min(product.commission_rate / 20.0, 1.0) * 30
-        
-        # 4. Điểm uy tín Shop Mall/Chính hãng (Tối đa 10 điểm)
-        trust_score = 10.0 if product.is_official_shop else 5.0
-        
-        total_score = rating_score + sales_score + commission_score + trust_score
-        return round(total_score, 2)
+    @staticmethod
+    def _clamp(value: float, lower: float = 0, upper: float = 1) -> float:
+        return max(lower, min(upper, value))
 
-    def filter_winner_products(self, raw_products: List[Dict]) -> List[Dict]:
-        """Lọc và sắp xếp các sản phẩm ngon nhất từ danh sách thô"""
-        winning_list = []
-        
+    def score_with_breakdown(self, product: ProductMetrics) -> Tuple[float, Dict[str, float], float, List[str]]:
+        """Return score /100, weighted components, confidence and caveats."""
+        demand = self._clamp(math.log1p(product.sales_count_30d) / math.log1p(3000)) * 25
+        rating = (product.rating / 5) * 15 if product.rating else 0
+        review_trust = self._clamp(math.log1p(product.review_count) / math.log1p(1000)) * 10
+        commission = self._clamp(product.commission_rate / 20) * 18 if product.commission_rate else 0
+        price_fit = 12 * math.exp(-((math.log10(max(product.price, 1)) - 5.25) ** 2) / 1.8)
+        trust = 8 if product.is_official_shop else 4
+        content_potential = 12 if product.image_url or product.description else 5
+        breakdown = {
+            "demand": round(demand, 2), "rating": round(rating, 2),
+            "review_trust": round(review_trust, 2), "commission": round(commission, 2),
+            "price_fit": round(price_fit, 2), "shop_trust": round(trust, 2),
+            "content_potential": round(content_potential, 2),
+        }
+        score = round(sum(breakdown.values()), 2)
+        known = sum((product.sales_count_30d > 0, product.rating > 0, product.review_count > 0,
+                     product.commission_rate > 0, bool(product.product_url),
+                     bool(product.image_url or product.description)))
+        confidence = round(known / 6 * 100, 1)
+        caveats: List[str] = []
+        if not product.commission_rate:
+            caveats.append("Chưa có hoa hồng: xác minh trong affiliate portal trước khi sản xuất content.")
+        if not product.sales_count_30d:
+            caveats.append("Chưa lấy được số bán 30 ngày: điểm demand có độ tin cậy thấp.")
+        if not product.review_count:
+            caveats.append("Chưa lấy được số review: cần kiểm tra chất lượng phản hồi thủ công.")
+        if product.rating and product.rating < self.min_rating:
+            caveats.append(f"Rating dưới ngưỡng khuyến nghị {self.min_rating:.1f}/5.")
+        if product.sales_count_30d and product.sales_count_30d < self.min_sales:
+            caveats.append(f"Số bán dưới ngưỡng tham chiếu {self.min_sales} đơn/30 ngày.")
+        return score, breakdown, confidence, caveats
+
+    def calculate_winner_score(self, product: ProductMetrics) -> float:
+        return self.score_with_breakdown(product)[0]
+
+    def analyze(self, product: ProductMetrics) -> Dict[str, Any]:
+        score, breakdown, confidence, caveats = self.score_with_breakdown(product)
+        result = product.model_dump()
+        result.update(winner_score=score, score_breakdown=breakdown, score_confidence=confidence,
+                      score_caveats=caveats,
+                      qualification="winner" if score >= 60 and confidence >= 50 else "needs_review")
+        return result
+
+    def filter_winner_products(self, raw_products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
         for item in raw_products:
             try:
-                # Validate dữ liệu đầu vào
-                product = ProductMetrics(**item)
-                
-                # Điều kiện lọc tối thiểu
-                if product.rating < self.min_rating or product.sales_count_30d < self.min_sales:
-                    continue
-                    
-                score = self.calculate_winner_score(product)
-                
-                product_data = product.model_dump()
-                product_data["winner_score"] = score
-                winning_list.append(product_data)
-                
-            except Exception as e:
-                logging.warning(f"Bỏ qua sản phẩm lỗi dữ liệu {item.get('product_id', 'Unknown')}: {e}")
+                analyzed = self.analyze(ProductMetrics(**item))
+            except Exception:
                 continue
-
-        # Sắp xếp theo điểm Winner giảm dần
-        winning_list.sort(key=lambda x: x["winner_score"], reverse=True)
-        logging.info(f"Đã phân tích {len(raw_products)} sản phẩm. Tìm thấy {len(winning_list)} sản phẩm đạt chuẩn Winner.")
-        return winning_list
-
-# Test nhanh module khi chạy trực tiếp
-if __name__ == "__main__":
-    mock_data = [
-        {
-            "product_id": "SP001",
-            "title": "Tai nghe Bluetooth Không Dây Pin Trâu",
-            "price": 250000,
-            "sales_count_30d": 1200,
-            "rating": 4.8,
-            "commission_rate": 15.0,
-            "is_official_shop": True,
-            "product_url": "https://shopee.vn/product-sample-1"
-        },
-        {
-            "product_id": "SP002",
-            "title": "Áo Thun Nam Giá Rẻ",
-            "price": 49000,
-            "sales_count_30d": 15,
-            "rating": 3.9,  # Sẽ bị loại do rating < 4.5
-            "commission_rate": 5.0,
-            "is_official_shop": False,
-            "product_url": "https://shopee.vn/product-sample-2"
-        }
-    ]
-    
-    analyzer = ProductAnalyzer()
-    results = analyzer.filter_winner_products(mock_data)
-    print("\n--- KẾT QUẢ SĂN SẢN PHẨM WINNER ---")
-    for p in results:
-        print(f"[{p['winner_score']} Điểm] {p['title']} - Giá: {p['price']:,}đ - Hoa hồng: {p['commission_rate']}%")
+            if analyzed["winner_score"] >= 60:
+                results.append(analyzed)
+        return sorted(results, key=lambda item: item["winner_score"], reverse=True)

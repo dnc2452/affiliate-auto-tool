@@ -75,6 +75,7 @@ class VideoAgent(BaseAgent):
         # 2. Tạo video (nếu có ảnh)
         # -------------------------------------------------
         video_path = None
+        thumbnail_path = None
 
         if image_paths and len(image_paths) > 0:
             # Lọc ảnh tồn tại
@@ -83,6 +84,7 @@ class VideoAgent(BaseAgent):
             if not valid_images:
                 self.log_warning("Không có ảnh hợp lệ → chỉ tạo audio")
             else:
+                thumbnail_path = valid_images[0]
                 self.log_info(f"Đang render video từ {len(valid_images)} ảnh...")
                 video_filename = f"{base_name}.mp4"
 
@@ -102,6 +104,7 @@ class VideoAgent(BaseAgent):
         result = {
             "audio_path": audio_path,
             "video_path": video_path,
+            "thumbnail_path": thumbnail_path,
             "content": content,
             "base_name": base_name,
         }
@@ -111,8 +114,13 @@ class VideoAgent(BaseAgent):
         # -------------------------------------------------
         if save_to_db and content.get("content_id"):
             try:
-                # Tạm thời chỉ log, sau này mở rộng bảng videos
-                self.log_info(f"Video liên kết với content_id={content.get('content_id')}")
+                result["video_id"] = self.db.save_video(
+                    int(content["content_id"]),
+                    video_path or "",
+                    audio_path or "",
+                    "rendered" if video_path else "audio_only",
+                )
+                self.log_info(f"Đã lưu media liên kết với content_id={content.get('content_id')}")
             except Exception as e:
                 self.log_error(f"Lỗi lưu video info: {e}")
 

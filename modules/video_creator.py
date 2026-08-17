@@ -1,5 +1,7 @@
 import os
 import logging
+import subprocess
+from pathlib import Path
 from typing import List, Optional
 
 from PIL import Image as PILImage
@@ -122,6 +124,10 @@ class VideoCreator:
             logging.error("Không tìm thấy audio.")
             return None
 
+        ffmpeg_result = self._create_with_ffmpeg(image_paths, audio_path, output_filename)
+        if ffmpeg_result:
+            return ffmpeg_result
+
         try:
 
             audio_clip = AudioFileClip(audio_path)
@@ -195,6 +201,40 @@ class VideoCreator:
         except Exception as e:
             logging.error(f"Lỗi render ảnh: {e}")
             return None
+
+    def _create_with_ffmpeg(self, image_paths: List[str], audio_path: str, output_filename: str) -> Optional[str]:
+        """Fast, dependency-light render path. MoviePy remains a compatibility fallback."""
+        valid_images = [str(Path(path).resolve()) for path in image_paths if Path(path).exists()]
+        if not valid_images:
+            return None
+        try:
+            import imageio_ffmpeg
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            return None
+        concat_path = Path(self.output_dir) / f".{Path(output_filename).stem}_inputs.txt"
+        output_path = Path(self.output_dir) / output_filename
+        # Each image is looped; the audio stream determines the final duration.
+        try:
+            lines = []
+            for path in valid_images:
+                escaped = path.replace("'", "'\\''")
+                lines.extend([f"file '{escaped}'", "duration 3"])
+            lines.append(f"file '{valid_images[-1].replace("'", "'\\''")}'")
+            concat_path.write_text("\n".join(lines), encoding="utf-8")
+            video_filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30"
+            command = [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_path), "-i", str(audio_path),
+                       "-vf", video_filter, "-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:v", "libx264",
+                       "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", str(output_path)]
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=180)
+            if completed.returncode == 0 and output_path.exists():
+                return str(output_path)
+            logging.warning("FFmpeg render failed; using MoviePy fallback: %s", completed.stderr[-500:])
+        except Exception as error:
+            logging.warning("FFmpeg unavailable; using MoviePy fallback: %s", error)
+        finally:
+            concat_path.unlink(missing_ok=True)
+        return None
 
     # =====================================================
     # VIDEO -> VOICEOVER

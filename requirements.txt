@@ -17,6 +17,7 @@ playwright
 # Data & Validation
 pydantic
 python-dotenv
+pandas
 
 # UI
 streamlit
